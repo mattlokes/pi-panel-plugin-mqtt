@@ -5,6 +5,10 @@
 #
 # Precedence: CLI flags > environment (PI_PANEL_MQTT_*) > this file > defaults.
 
+# Top-level keys must appear BEFORE the first [section] header: in TOML a bare
+# key after a header belongs to that section.
+log_level = "INFO"
+
 [compositor]
 socket_path = "/tmp/pi-panel.sock"
 
@@ -42,4 +46,3 @@ tls = false
 enabled = true
 discovery_prefix = "homeassistant"
 
-log_level = "INFO"
