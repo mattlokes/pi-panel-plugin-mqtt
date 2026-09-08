@@ -1,0 +1,48 @@
+[Unit]
+Description=pi-panel compositor MQTT bridge
+Documentation=file:/home/pi/pi-panel-compositor-mqtt/README.md
+After=network-online.target
+Wants=network-online.target
+# No ordering against the compositor is possible: it is not a systemd unit, it
+# is started from ~/.bash_profile on tty1. The bridge therefore has to tolerate
+# /tmp/pi-panel.sock being absent at any moment, and simply reports
+# compositor/availability = offline until it appears.
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/pi-panel-compositor-mqtt
+
+# Call the venv's console script directly rather than `uv run`. This Pi boots
+# from a USB stick that reads at ~3 MB/s cold, and `uv run` re-checks the
+# lockfile and environment on every invocation. The venv is built once at
+# install time with `uv sync --frozen --compile-bytecode`.
+ExecStart=/home/pi/pi-panel-compositor-mqtt/.venv/bin/pi-panel-bridge \
+          --config /home/pi/.config/pi-panel/mqtt.toml
+
+# Optional: MQTT credentials, kept out of the tracked config file.
+EnvironmentFile=-/home/pi/.config/pi-panel/mqtt.env
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pi-panel-mqtt
+
+# Modest hardening. Note the deliberate PrivateTmp=false below.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+
+# MUST stay false. PrivateTmp=true would give this service its own /tmp
+# namespace, which would hide /tmp/pi-panel.sock — the compositor creates that
+# in the real /tmp from outside systemd entirely. With a private /tmp the
+# bridge would run happily and report the compositor permanently offline.
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,45 @@
+# pi-panel-compositor-mqtt configuration
+#
+# Install to ~/.config/pi-panel/mqtt.toml — the same directory the compositor
+# already uses for compositor.conf.
+#
+# Precedence: CLI flags > environment (PI_PANEL_MQTT_*) > this file > defaults.
+
+[compositor]
+socket_path = "/tmp/pi-panel.sock"
+
+# How often to ask the compositor for `status`. This sets how quickly a view
+# switch made locally (keybinding) shows up on MQTT. The IPC round trip is a
+# local unix socket, so 1s is cheap.
+poll_interval = 1.0
+
+# `list` is polled on a slower cadence, since it only changes when views appear,
+# vanish, or change their title/app_id. It is also refreshed immediately
+# whenever `status` shows the view count or active view changed.
+list_interval = 5.0
+
+request_timeout = 5.0
+
+[mqtt]
+host = "mqtt.home.local"
+port = 1883
+
+# Leave empty for an anonymous broker. Prefer supplying a password via the
+# environment (PI_PANEL_MQTT_PASSWORD) rather than storing it here — see
+# EnvironmentFile in the systemd unit. If you do put one here, chmod 600.
+username = ""
+password = ""
+
+base_topic = "pi-panel"
+
+# Which panel this is, used in every topic. Empty means this machine's hostname.
+device_id = ""
+
+keepalive = 30
+tls = false
+
+[homeassistant]
+enabled = true
+discovery_prefix = "homeassistant"
+
+log_level = "INFO"
