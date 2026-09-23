@@ -8,5 +8,5 @@ dist/
 .ruff_cache/
 
 # Local config may hold broker credentials
-config/pi-panel-mqtt.toml
+config/mqtt.toml
 *.env

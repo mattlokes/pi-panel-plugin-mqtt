@@ -9,19 +9,21 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-# Shares the namespace the compositor already owns (~/.config/pi-panel/).
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "pi-panel" / "mqtt.toml"
+# pi-panel-run points PI_PANEL_CONFIG_DIR at this plugin's own config directory.
+DEFAULT_CONFIG_PATH = Path(
+    os.environ.get("PI_PANEL_CONFIG_DIR")
+    or Path.home() / ".config" / "pi-panel" / "plugins" / "mqtt"
+) / "mqtt.toml"
 ENV_PREFIX = "PI_PANEL_MQTT_"
+DEFAULT_CTL_SOCKET = "/run/pi-panel/ctl/io.pipanel.Ctl"
 
 
 @dataclass(frozen=True, slots=True)
-class CompositorSettings:
-    socket_path: str = "/tmp/pi-panel.sock"
-    poll_interval: float = 1.0
-    # `list` is polled less often than `status`: status changes cover switching,
-    # while list only changes when views appear, vanish, or retitle.
-    list_interval: float = 5.0
-    request_timeout: float = 5.0
+class CtlSettings:
+    socket_path: str = ""  # empty -> $PI_PANEL_CTL_SOCKET -> DEFAULT_CTL_SOCKET
+
+    def resolved_socket(self) -> str:
+        return self.socket_path or os.environ.get("PI_PANEL_CTL_SOCKET") or DEFAULT_CTL_SOCKET
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,14 +49,14 @@ class HomeAssistantSettings:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    compositor: CompositorSettings = field(default_factory=CompositorSettings)
+    ctl: CtlSettings = field(default_factory=CtlSettings)
     mqtt: MqttSettings = field(default_factory=MqttSettings)
     homeassistant: HomeAssistantSettings = field(default_factory=HomeAssistantSettings)
     log_level: str = "INFO"
 
 
 _SECTIONS: dict[str, type] = {
-    "compositor": CompositorSettings,
+    "ctl": CtlSettings,
     "mqtt": MqttSettings,
     "homeassistant": HomeAssistantSettings,
 }
@@ -68,8 +70,7 @@ _ENV_MAP: dict[str, tuple[str | None, str]] = {
     "BASE_TOPIC": ("mqtt", "base_topic"),
     "DEVICE_ID": ("mqtt", "device_id"),
     "TLS": ("mqtt", "tls"),
-    "SOCKET_PATH": ("compositor", "socket_path"),
-    "POLL_INTERVAL": ("compositor", "poll_interval"),
+    "CTL_SOCKET": ("ctl", "socket_path"),
     "DISCOVERY": ("homeassistant", "enabled"),
     "DISCOVERY_PREFIX": ("homeassistant", "discovery_prefix"),
     "LOG_LEVEL": (None, "log_level"),

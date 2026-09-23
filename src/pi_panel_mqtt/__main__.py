@@ -1,4 +1,4 @@
-"""Entry point for the bridge daemon."""
+"""pi-panel-mqtt: entry point (run by pi-panel-plugin@mqtt.service)."""
 
 from __future__ import annotations
 
@@ -10,29 +10,23 @@ import signal
 import sys
 from pathlib import Path
 
-from ..config import DEFAULT_CONFIG_PATH, load
-from .daemon import Bridge
+from .bridge import Bridge
+from .config import DEFAULT_CONFIG_PATH, load
 
-log = logging.getLogger("pi-panel-bridge")
+log = logging.getLogger("pi-panel-mqtt")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="pi-panel-bridge",
-        description="Bridge pi-panel-compositor's IPC socket to MQTT.",
-    )
-    p.add_argument("--config", type=Path, default=None,
-                   help=f"config file (default: {DEFAULT_CONFIG_PATH})")
+    p = argparse.ArgumentParser(prog="pi-panel-mqtt",
+                                description="Bridge pi-panel-ctl to MQTT and Home Assistant.")
+    p.add_argument("--config", type=Path, default=None, help=f"default: {DEFAULT_CONFIG_PATH}")
     p.add_argument("--host", default=None, help="MQTT broker host")
-    p.add_argument("--port", type=int, default=None, help="MQTT broker port")
+    p.add_argument("--port", type=int, default=None)
     p.add_argument("--username", default=None)
     p.add_argument("--password", default=None)
-    p.add_argument("--device-id", default=None,
-                   help="topic device id (default: hostname)")
+    p.add_argument("--device-id", default=None, help="topic device id (default: hostname)")
     p.add_argument("--base-topic", default=None)
-    p.add_argument("--socket", dest="socket_path", default=None,
-                   help="compositor IPC socket path")
-    p.add_argument("--poll-interval", type=float, default=None)
+    p.add_argument("--ctl-socket", default=None, help="io.pipanel.Ctl socket")
     p.add_argument("--no-discovery", action="store_true",
                    help="do not publish Home Assistant discovery configs")
     p.add_argument("--log-level", default=None)
@@ -40,7 +34,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _overrides(args: argparse.Namespace) -> dict:
-    """CLI flags as dotted section.field keys. None means 'not given'."""
     ov = {
         "mqtt.host": args.host,
         "mqtt.port": args.port,
@@ -48,25 +41,12 @@ def _overrides(args: argparse.Namespace) -> dict:
         "mqtt.password": args.password,
         "mqtt.device_id": args.device_id,
         "mqtt.base_topic": args.base_topic,
-        "compositor.socket_path": args.socket_path,
-        "compositor.poll_interval": args.poll_interval,
+        "ctl.socket_path": args.ctl_socket,
         "log_level": args.log_level,
     }
     if args.no_discovery:
         ov["homeassistant.enabled"] = False
     return ov
-
-
-def _configure_logging(level: str) -> None:
-    # systemd routes stdout/stderr to the journal, which adds its own
-    # timestamps, so only include them when running on a terminal.
-    on_tty = sys.stderr.isatty()
-    fmt = "%(asctime)s %(levelname)-7s %(message)s" if on_tty else "%(levelname)-7s %(message)s"
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format=fmt,
-        stream=sys.stderr,
-    )
 
 
 async def _run(bridge: Bridge) -> None:
@@ -75,15 +55,12 @@ async def _run(bridge: Bridge) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
-
     task = asyncio.create_task(bridge.run())
     await stop.wait()
     log.info("shutting down")
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError, BaseExceptionGroup):
         await task
-    except asyncio.CancelledError:
-        pass
 
 
 def main() -> int:
@@ -93,16 +70,13 @@ def main() -> int:
     except (ValueError, OSError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
-
-    _configure_logging(settings.log_level)
+    # The journal adds its own timestamps; only include them on a terminal.
+    fmt = "%(asctime)s %(levelname)-7s %(message)s" if sys.stderr.isatty() else "%(levelname)-7s %(message)s"
+    logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO),
+                        format=fmt, stream=sys.stderr)
     bridge = Bridge(settings)
-    log.info(
-        "connecting to %s:%d as device %r (socket %s)",
-        settings.mqtt.host,
-        settings.mqtt.port,
-        bridge.topics.device_id,
-        settings.compositor.socket_path,
-    )
+    log.info("broker %s:%d, device %r, ctl %s", settings.mqtt.host, settings.mqtt.port,
+             bridge.topics.device_id, settings.ctl.resolved_socket())
     try:
         asyncio.run(_run(bridge))
     except KeyboardInterrupt:

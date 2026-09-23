@@ -1,24 +1,24 @@
 [project]
-name = "pi-panel-compositor-mqtt"
-version = "0.1.0"
-description = "MQTT bridge and TUI for pi-panel-compositor"
+name = "pi-panel-plugin-mqtt"
+version = "0.2.0"
+description = "pi-panel plugin: bridges io.pipanel.Ctl to MQTT and Home Assistant"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 
 dependencies = [
-    # Async MQTT. Deliberately not raw paho-mqtt: its threaded loop_start()
-    # runs callbacks on another OS thread, which would force call_from_thread
-    # marshalling for every message inside Textual. aiomqtt wraps paho and
-    # exposes `async for message in client.messages`, which runs as an ordinary
-    # coroutine on the same asyncio loop Textual already drives.
+    # Async MQTT: `async for message in client.messages` runs as an ordinary
+    # coroutine on the same loop as the Varlink subscription.
     "aiomqtt>=2.5,<3",
-    "textual>=8.2,<9",
+    "pi-panel-varlink",
 ]
 
 [project.scripts]
-pi-panel-bridge = "pi_panel_mqtt.bridge.__main__:main"
-pi-panel-tui = "pi_panel_mqtt.tui.__main__:main"
+pi-panel-mqtt = "pi_panel_mqtt.__main__:main"
+
+# Installed by pi-panel-pkg into ~/pi-panel-plugin/mqtt, next to ~/pi-panel-core.
+[tool.uv.sources]
+pi-panel-varlink = { path = "../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink" }
 
 [dependency-groups]
 dev = [
@@ -35,4 +35,5 @@ packages = ["src/pi_panel_mqtt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

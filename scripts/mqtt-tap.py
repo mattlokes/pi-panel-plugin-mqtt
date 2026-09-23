@@ -5,7 +5,7 @@ Neither the Pi nor the dev Mac has mosquitto-clients, and installing it on the
 Pi needs root, so this covers the same ground with no system packages:
 
     uv run --with aiomqtt scripts/mqtt-tap.py sub 'pi-panel/#'
-    uv run --with aiomqtt scripts/mqtt-tap.py pub pi-panel/jazz/command/switch-name immich
+    uv run --with aiomqtt scripts/mqtt-tap.py pub pi-panel/jazz/command/show immich
 """
 
 from __future__ import annotations

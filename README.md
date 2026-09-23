@@ -1,96 +1,90 @@
-# pi-panel-compositor-mqtt
+# pi-panel-plugin-mqtt
 
-An MQTT bridge and a Textual TUI for
-[pi-panel-compositor](../pi-panel-compositor), a wlroots kiosk compositor.
-
-The compositor is controllable only through a Unix-socket text protocol on the
-machine it runs on. This package puts it on the network:
+A pi-panel plugin that puts the panel on MQTT, with
+[Home Assistant discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery).
 
 ```
-compositor ──unix socket──▶ bridge ──MQTT──▶ broker ──▶ Home Assistant
-  (tty1)     /tmp/pi-panel.sock   (systemd)              └──▶ TUI (any machine)
+pi-panel-ctl ──Varlink (Subscribe)──▶ pi-panel-mqtt ──MQTT──▶ broker ──▶ Home Assistant
+             ◀──Varlink calls──────── (plugin)      ◀──commands──
+apps' io.pipanel.App ◀── action buttons
 ```
 
-- **`pi-panel-bridge`** — a daemon that polls the compositor's IPC socket,
-  publishes state to MQTT, and turns MQTT commands back into IPC commands.
-  Publishes Home Assistant discovery configs so the panel appears as entities.
-- **`pi-panel-tui`** — a Textual terminal UI that drives the panel over MQTT.
-  It never touches the IPC socket, so it runs anywhere with broker access.
+It talks only to `io.pipanel.Ctl`, never to the compositor. Nothing is polled:
+state arrives through ctl's `Subscribe`, and MQTT gets a retained message only
+when something actually changes.
 
 ## Install
 
 ```bash
-uv sync --frozen --compile-bytecode
-cp config/pi-panel-mqtt.toml.example ~/.config/pi-panel/mqtt.toml
-$EDITOR ~/.config/pi-panel/mqtt.toml
+pi-panel-pkg install https://github.com/mattlokes/pi-panel-plugin-mqtt.git
+$EDITOR ~/.config/pi-panel/plugins/mqtt/mqtt.toml      # broker host etc.
+pi-panel-ctl enable mqtt
+journalctl -u pi-panel-plugin@mqtt -f
 ```
 
-See [`deploy/README.md`](deploy/README.md) for running the bridge as a systemd
-service on the Pi.
+Put a broker password in the environment rather than in the file: add
+`PI_PANEL_MQTT_PASSWORD=...` to a drop-in for `pi-panel-plugin@mqtt.service`.
 
-## Run the TUI from another machine
+## Topics
 
-No checkout or install needed — `uv` supplies its own Python:
+The base is `pi-panel/<device>`; the device id defaults to the hostname.
+
+| Topic | Retained | Payload |
+|---|---|---|
+| `availability` | yes | `online`/`offline`: the **bridge** (MQTT last will) |
+| `ctl/availability` | yes | `online`/`offline`: pi-panel-ctl reachable |
+| `compositor/availability` | yes | `online`/`offline`: the display server |
+| `state` | yes | JSON: what is showing and why, holds, rotation, display power |
+| `apps` | yes | JSON: installed apps and plugins, enabled, unit state |
+| `rotations` | yes | JSON: `{"selected": …, "rotations": [names]}` |
+| `app/<name>/actions` | yes | JSON: the app's actions (`io.pipanel.App.ListActions`) |
+| `command/show` | no | app name, or `{"app", "seconds"?, "priority"?}` |
+| `command/release` | no | hold token |
+| `command/next`, `command/previous` | no | anything |
+| `command/rotation/paused` | no | `ON`/`OFF` |
+| `command/rotation/select` | no | rotation name |
+| `command/app/<name>/restart` | no | anything |
+| `command/app/<name>/enabled` | no | `ON`/`OFF` |
+| `command/app/<name>/action/<action>` | no | anything |
+| `command/result` | no | JSON outcome of the last command, including ctl's error name |
+
+For example, a doorbell automation can put the camera app up for 30 seconds
+above everything else:
 
 ```bash
-uvx --from git+file:///path/to/pi-panel-compositor-mqtt pi-panel-tui \
-    --host mqtt.home.local --device-id jazz
+mosquitto_pub -t pi-panel/jazz/command/show -m '{"app": "camera", "seconds": 30, "priority": 50}'
 ```
 
-## MQTT topics
+**Availability is split into three topics on purpose.** The bridge, ctl and
+the compositor fail independently. One combined topic could not tell "the
+panel crashed" from "the bridge lost the broker".
 
-Base `pi-panel`, device id defaults to the hostname.
-
-| Topic | Retained | Meaning |
-|---|---|---|
-| `pi-panel/<id>/bridge/availability` | yes | `online`/`offline` — the **bridge** (MQTT last will) |
-| `pi-panel/<id>/compositor/availability` | yes | `online`/`offline` — the **compositor's IPC socket** |
-| `pi-panel/<id>/status` | yes | JSON: active view, view count, transitioning, output geometry |
-| `pi-panel/<id>/views` | yes | JSON array of views |
-| `pi-panel/<id>/compositor/version` | yes | compositor version string |
-| `pi-panel/<id>/command/switch` | no | view id |
-| `pi-panel/<id>/command/switch-name` | no | view name |
-| `pi-panel/<id>/command/switch-app` | no | Wayland app_id |
-| `pi-panel/<id>/command/launch` | no | JSON `{"name": ..., "command": ...}` |
-| `pi-panel/<id>/command/close` | no | view name/id, or `active` |
-| `pi-panel/<id>/command/restart` | no | view name/id, or `active` |
-| `pi-panel/<id>/command/quit` | no | any payload — shuts the compositor down |
-| `pi-panel/<id>/command/result` | no | JSON outcome of the last command |
-
-Two design points worth knowing:
-
-**Bridge and compositor availability are separate topics.** The bridge can be
-perfectly healthy while the compositor is down — it is started from a tty1
-login shell, not systemd, so it comes and goes independently. Collapsing these
-into one topic would make "the panel died" indistinguishable from "the bridge
-died".
-
-**Command topics are never retained.** A retained `quit` or `switch` would be
-replayed at every broker reconnect and re-fire the command. The bridge always
-publishes with `retain=False`, and so should anything else writing to them.
+**Command topics are never retained.** A retained command would fire again at
+every broker reconnect.
 
 ## Home Assistant
 
-With `[homeassistant] enabled = true` the bridge publishes discovery configs
-for a single device: a `select` for the active view, sensors for the active
-view / view count / output resolution / refresh rate, a `binary_sensor` for
-transitioning, and a **button to restart the active view**.
+With `[homeassistant] enabled = true`, the panel shows up as one device:
 
-There is deliberately **no quit button** — a mis-tap on a dashboard would blank
-the panel, and it could only be brought back from the machine itself or over
-SSH. Quit remains available on the command topic and in the TUI.
+- a **Showing** select (choosing an app pins it until *Next*), and a *Showing because* sensor
+- **Next** / **Previous** buttons, a **Rotation paused** switch and a **Rotation** select
+- **Display** (power) and **Compositor** (connectivity) binary sensors
+- for every app and plugin: an **enabled** switch and a **Restart** button
+- for every app action: a button, e.g. *immich: Next photo*
 
-Note that Home Assistant reads a `select`'s options from the *discovery config*,
-not from a state topic, so the bridge republishes that config whenever the set
-of view names changes. There is a brief staleness window between a
-`launch`/`close` and that republish.
+The entity set follows the panel's contents. When an app or action goes away,
+its entities are removed by publishing an empty retained config.
+
+There is deliberately no control that stops the compositor.
 
 ## Development
 
 ```bash
-uv run pytest
+uv sync
+uv run pytest            # a fake io.pipanel.Ctl over real Varlink; no broker, no Pi
+uv run --with aiomqtt scripts/mqtt-tap.py sub 'pi-panel/#'
 ```
 
-The tests include a fake compositor (`tests/fake_compositor.py`) that speaks the
-IPC protocol, so the bridge and parsers can be tested with no real compositor
-and no broker.
+`pi-panel-varlink` comes from `../../pi-panel-core/pi-panel-core-ctl` by
+relative path. That path also works once the plugin is installed to
+`~/pi-panel-plugin/mqtt`.

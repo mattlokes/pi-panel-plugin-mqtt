@@ -9,7 +9,7 @@ import pytest
 from pi_panel_mqtt.config import load
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EXAMPLE = REPO_ROOT / "config" / "pi-panel-mqtt.toml.example"
+EXAMPLE = REPO_ROOT / "config" / "mqtt.toml.example"
 
 
 def test_shipped_example_parses_into_the_right_sections():
@@ -18,14 +18,20 @@ def test_shipped_example_parses_into_the_right_sections():
     s = load(EXAMPLE)
     assert s.log_level == "INFO"
     assert s.mqtt.host == "mqtt.home.local"
-    assert s.compositor.poll_interval == 1.0
+    assert s.ctl.socket_path == ""
     assert s.homeassistant.enabled is True
 
 
-def test_defaults_when_no_file(tmp_path: Path):
+def test_defaults_when_no_file(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("PI_PANEL_CTL_SOCKET", raising=False)
     s = load(tmp_path / "absent.toml")
     assert s.mqtt.port == 1883
-    assert s.compositor.socket_path == "/tmp/pi-panel.sock"
+    assert s.ctl.resolved_socket() == "/run/pi-panel/ctl/io.pipanel.Ctl"
+
+
+def test_ctl_socket_from_pi_panel_run(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PI_PANEL_CTL_SOCKET", "/x/ctl")
+    assert load(tmp_path / "absent.toml").ctl.resolved_socket() == "/x/ctl"
 
 
 def test_unknown_key_is_rejected(tmp_path: Path):
