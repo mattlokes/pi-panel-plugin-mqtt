@@ -25,7 +25,7 @@ from pi_panel_varlink import Client, ProtocolError, VarlinkError, VarlinkTimeout
 
 from .config import Settings
 from .discovery import Discovery
-from .schema import OFF, OFFLINE, ON, ONLINE, Topics, encode, result_payload
+from .schema import CLOCK_KEYS, OFF, OFFLINE, ON, ONLINE, Topics, encode, result_payload
 
 log = logging.getLogger("pi-panel-mqtt")
 
@@ -81,7 +81,8 @@ class Bridge:
                 if app["kind"] == "app":
                     out[t.app_actions(app["name"])] = encode(self.actions.get(app["name"], []))
         if self.settings.homeassistant.enabled and self.state is not None:
-            for msg in self.discovery.messages(self.apps, self.rotations["rotations"], self.actions):
+            for msg in self.discovery.messages(self.apps, self.rotations["rotations"], self.actions,
+                                               clock="clock" in self.state):
                 out[msg.topic] = msg.payload
         return out
 
@@ -192,6 +193,8 @@ class Bridge:
             return await self._ctl_call("PauseRotation" if _on(text) else "ResumeRotation")
         if path == "rotation/select":
             return await self._ctl_call("SelectRotation", {"name": text})
+        if parts[0] == "clock":
+            return await self._ctl_call("SetClock", _clock_params(parts[1:], payload=text))
         if len(parts) >= 3 and parts[0] == "app":
             name, verb = parts[1], parts[2]
             if verb == "restart" and len(parts) == 3:
@@ -297,3 +300,27 @@ def _on(text: str) -> bool:
     if value in (OFF, "FALSE", "0", "NO"):
         return False
     raise ValueError(f"expected ON or OFF, got {text!r}")
+
+
+def _clock_params(parts: list[str], payload: str) -> dict[str, Any]:
+    """command/clock (JSON) or command/clock/<field> (one value) -> SetClock
+    parameters. ctl validates the values; this only gets their types right."""
+    if not parts:
+        data = json.loads(payload) if payload.startswith("{") else None
+        if not isinstance(data, dict) or not data or set(data) - set(CLOCK_KEYS):
+            raise ValueError(f"clock expects a JSON object with any of {', '.join(CLOCK_KEYS)}")
+        return data
+    if len(parts) != 1 or parts[0] not in CLOCK_KEYS:
+        raise ValueError(f"unknown command clock/{'/'.join(parts)}")
+    key = parts[0]
+    if key == "enabled":
+        return {"enabled": _on(payload)}
+    if key == "size":
+        try:
+            size = float(payload)   # Home Assistant's number entity may send "48.0"
+        except ValueError:
+            raise ValueError(f"size must be a number, got {payload!r}") from None
+        if not size.is_integer():
+            raise ValueError(f"size must be a whole number, got {payload!r}")
+        return {"size": int(size)}
+    return {key: payload}

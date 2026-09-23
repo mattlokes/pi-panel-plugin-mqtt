@@ -34,7 +34,7 @@ The base is `pi-panel/<device>`; the device id defaults to the hostname.
 | `availability` | yes | `online`/`offline`: the **bridge** (MQTT last will) |
 | `ctl/availability` | yes | `online`/`offline`: pi-panel-ctl reachable |
 | `compositor/availability` | yes | `online`/`offline`: the display server |
-| `state` | yes | JSON: what is showing and why, holds, rotation, display power |
+| `state` | yes | JSON: what is showing and why, holds, rotation, display power, clock overlay |
 | `apps` | yes | JSON: installed apps and plugins, enabled, unit state |
 | `rotations` | yes | JSON: `{"selected": …, "rotations": [names]}` |
 | `app/<name>/actions` | yes | JSON: the app's actions (`io.pipanel.App.ListActions`) |
@@ -46,6 +46,11 @@ The base is `pi-panel/<device>`; the device id defaults to the hostname.
 | `command/app/<name>/restart` | no | anything |
 | `command/app/<name>/enabled` | no | `ON`/`OFF` |
 | `command/app/<name>/action/<action>` | no | anything |
+| `command/clock` | no | JSON, any of `{"enabled", "format", "position", "size"}` |
+| `command/clock/enabled` | no | `ON`/`OFF` |
+| `command/clock/format` | no | `strftime(3)` format, e.g. `%a %H:%M` |
+| `command/clock/position` | no | `top_left`, `top_right`, `bottom_left`, `bottom_right`, `center` |
+| `command/clock/size` | no | text height in px; `0` = automatic |
 | `command/result` | no | JSON outcome of the last command, including ctl's error name |
 
 For example, a doorbell automation can put the camera app up for 30 seconds
@@ -53,6 +58,12 @@ above everything else:
 
 ```bash
 mosquitto_pub -t pi-panel/jazz/command/show -m '{"app": "camera", "seconds": 30, "priority": 50}'
+```
+
+Or turn on the clock overlay, top right, showing the day too:
+
+```bash
+mosquitto_pub -t pi-panel/jazz/command/clock -m '{"enabled": true, "format": "%a %H:%M", "position": "top_right"}'
 ```
 
 **Availability is split into three topics on purpose.** The bridge, ctl and
@@ -71,6 +82,8 @@ With `[homeassistant] enabled = true`, the panel shows up as one device:
 - **Display** (power) and **Compositor** (connectivity) binary sensors
 - for every app and plugin: an **enabled** switch and a **Restart** button
 - for every app action: a button, e.g. *immich: Next photo*
+- a **Clock overlay** switch, with *format* (text), *position* (select) and
+  *size* (number) under the device's configuration entities
 
 The entity set follows the panel's contents. When an app or action goes away,
 its entities are removed by publishing an empty retained config.

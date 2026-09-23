@@ -23,6 +23,7 @@ uv run pytest     # fake ctl over real Varlink + a recording publisher: no broke
 - **Availability comes in three topics** (bridge / ctl / compositor). Entities need bridge + ctl; display entities also need the compositor. The compositor connectivity sensor needs only bridge + ctl, since its whole job is reporting the compositor as down.
 - **Command topics are never retained**, and the bridge ignores its own `command/result`, which it receives through the `command/#` wildcard.
 - **Discovery removal is an empty retained payload** on the old config topic. `sync()` diffs the discovery topic set on every pass.
+- **The clock overlay entities need bridge + ctl only**, not the compositor. The settings live in ctl, which applies them when the compositor comes up. They are published only when ctl's state has a `clock` key.
 - **HA reads a `select`'s options from its discovery config**, so the config is republished when the app or rotation set changes. That happens automatically, because discovery is just part of `desired()`.
 
 ## Gotchas

@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .schema import OFF, ON, Topics, encode
+from .schema import CLOCK_POSITIONS, OFF, ON, Topics, encode
 
 _SAFE = re.compile(r"[^a-zA-Z0-9_-]")
 
@@ -72,7 +72,9 @@ class Discovery:
                                 encode(payload))
 
     def messages(self, apps: list[dict[str, Any]], rotations: list[str],
-                 actions: dict[str, list[dict[str, str]]]) -> list[DiscoveryMessage]:
+                 actions: dict[str, list[dict[str, str]]],
+                 clock: bool = False) -> list[DiscoveryMessage]:
+        """Every entity. |clock|: ctl has the clock overlay (its state says so)."""
         t = self.topics
         app_names = sorted(a["name"] for a in apps if a["kind"] == "app")
         out = [
@@ -105,6 +107,8 @@ class Discovery:
                          state_topic=t.compositor_availability,
                          payload_on="online", payload_off="offline", device_class="connectivity"),
         ]
+        if clock:
+            out += self._clock_entities()
         for app in sorted(apps, key=lambda a: a["name"]):
             name = app["name"]
             match = f"{{% for a in value_json if a.name == '{name}' %}}"
@@ -123,6 +127,30 @@ class Discovery:
                     command_topic=t.command("app", name, "action", action["name"]),
                     icon="mdi:gesture-tap-button"))
         return out
+
+    def _clock_entities(self) -> list[DiscoveryMessage]:
+        """The clock overlay. Its settings live in ctl, so these do not need
+        the compositor to be up: a change made meanwhile applies when it is."""
+        t = self.topics
+        return [
+            self._entity("switch", "clock_overlay", "Clock overlay",
+                         command_topic=t.command("clock", "enabled"), state_topic=t.state,
+                         value_template=f"{{{{ '{ON}' if value_json.clock.enabled else '{OFF}' }}}}",
+                         payload_on=ON, payload_off=OFF, icon="mdi:clock-digital"),
+            self._entity("text", "clock_overlay_format", "Clock overlay format", entity_category="config",
+                         command_topic=t.command("clock", "format"), state_topic=t.state,
+                         value_template="{{ value_json.clock.format }}",
+                         min=1, max=63, icon="mdi:clock-edit-outline"),
+            self._entity("select", "clock_overlay_position", "Clock overlay position", entity_category="config",
+                         command_topic=t.command("clock", "position"), state_topic=t.state,
+                         value_template="{{ value_json.clock.position }}",
+                         options=list(CLOCK_POSITIONS), icon="mdi:arrow-all"),
+            self._entity("number", "clock_overlay_size", "Clock overlay size", entity_category="config",
+                         command_topic=t.command("clock", "size"), state_topic=t.state,
+                         value_template="{{ value_json.clock.size }}",
+                         min=0, max=1000, step=1, mode="box", unit_of_measurement="px",
+                         icon="mdi:format-size"),
+        ]
 
     def removal(self, topic: str) -> DiscoveryMessage:
         """An empty retained config deletes the entity in Home Assistant."""

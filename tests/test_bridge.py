@@ -31,6 +31,7 @@ method ResumeRotation() -> ()
 method SelectRotation(name: string) -> ()
 method EnablePackage(name: string, enabled: bool) -> ()
 method RestartPackage(name: string) -> ()
+method SetClock(enabled: ?bool, format: ?string, position: ?string, size: ?int) -> (clock: object)
 method Subscribe() -> (event: object)
 error NoSuchApp (app: string)
 """
@@ -39,7 +40,8 @@ error NoSuchApp (app: string)
 def state(**kw: Any) -> dict[str, Any]:
     return {"showing": "photos", "reason": "rotation", "output_power": True, "rotation": "default",
             "rotation_paused": False, "holds": [], "active_schedules": [],
-            "compositor_online": True} | kw
+            "compositor_online": True,
+            "clock": {"enabled": False, "format": "%H:%M", "position": "bottom_right", "size": 0}} | kw
 
 
 def app(name: str, kind: str = "app", **kw: Any) -> dict[str, Any]:
@@ -60,7 +62,7 @@ class FakeCtl:
     async def start(self) -> None:
         iface = Interface(CTL_DESCRIPTION)
         for name in ("Show", "Release", "Next", "Previous", "PauseRotation", "ResumeRotation",
-                     "SelectRotation", "EnablePackage", "RestartPackage"):
+                     "SelectRotation", "EnablePackage", "RestartPackage", "SetClock"):
             iface.add_method(name, self._recorder(name))
         iface.add_method("GetState", self._get_state)
         iface.add_method("ListApps", self._list_apps)
@@ -245,6 +247,11 @@ async def test_ctl_going_away_marks_it_offline(rig):
     ("rotation/select", "night", ("SelectRotation", {"name": "night"})),
     ("app/clock/restart", "", ("RestartPackage", {"name": "clock"})),
     ("app/clock/enabled", "OFF", ("EnablePackage", {"name": "clock", "enabled": False})),
+    ("clock/enabled", "ON", ("SetClock", {"enabled": True})),
+    ("clock/format", "%a %H:%M", ("SetClock", {"format": "%a %H:%M"})),
+    ("clock/position", "top_left", ("SetClock", {"position": "top_left"})),
+    ("clock/size", "48.0", ("SetClock", {"size": 48})),
+    ("clock", '{"enabled": true, "size": 0}', ("SetClock", {"enabled": True, "size": 0})),
 ])
 async def test_commands_map_to_ctl_calls(rig, path, payload, expected):
     bridge, ctl, client, _ = rig
@@ -299,6 +306,37 @@ async def test_visibility_only_changes_do_not_requery_actions(rig):
     ctl.apps = [dict(a, unit_state="inactive") if a["name"] == "photos" else a for a in ctl.apps]
     ctl.emit("apps_changed", apps=ctl.apps)
     await until(lambda: calls == [1])
+
+
+async def test_clock_entities(rig):
+    bridge, ctl, client, _ = rig
+    switch = discovery_config(client, "/clock_overlay/config")
+    assert switch["command_topic"] == "pi-panel/jazz/command/clock/enabled"
+    assert "value_json.clock.enabled" in switch["value_template"]
+    assert discovery_config(client, "/clock_overlay_position/config")["options"][0] == "top_left"
+    size = discovery_config(client, "/clock_overlay_size/config")
+    assert (size["min"], size["max"], size["entity_category"]) == (0, 1000, "config")
+    assert discovery_config(client, "/clock_overlay_format/config")["max"] == 63
+    # Display entities need the compositor; the clock's settings live in ctl.
+    assert len(switch["availability"]) == 2
+
+
+async def test_no_clock_entities_from_a_ctl_without_one(rig):
+    bridge, ctl, client, _ = rig
+    ctl.state = {k: v for k, v in state().items() if k != "clock"}
+    ctl.emit("state_changed")
+    await until(lambda: discovery_config(client, "/clock_overlay/config") is None)
+
+
+async def test_bad_clock_commands(rig):
+    bridge, ctl, client, _ = rig
+    before = len(ctl.calls)
+    for path, payload in (("clock/size", b"big"), ("clock/size", b"4.5"), ("clock/enabled", b"maybe"),
+                          ("clock", b"on"), ("clock", b'{"colour": "red"}'), ("clock/frob", b"1")):
+        await bridge.handle(f"pi-panel/jazz/command/{path}", payload)
+        result = json.loads(client.last("pi-panel/jazz/command/result"))
+        assert result["ok"] is False and result["detail"]["error"] == "invalid", (path, payload)
+    assert len(ctl.calls) == before
 
 
 def test_legacy_topics_are_this_devices_old_ones():

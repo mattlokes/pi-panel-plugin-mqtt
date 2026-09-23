@@ -21,6 +21,13 @@ broker reconnect):
     command/app/<name>/restart
     command/app/<name>/enabled    ON / OFF
     command/app/<name>/action/<action>
+    command/clock                 JSON {"enabled"?, "format"?, "position"?, "size"?}
+    command/clock/enabled         ON / OFF
+    command/clock/format          strftime(3) format, e.g. %H:%M
+    command/clock/position        top_left, top_right, bottom_left, bottom_right, center
+    command/clock/size            text height in px; 0 = automatic
+
+The clock overlay's settings are part of the state topic (`clock`).
 
     command/result                JSON outcome of the last command (not retained)
 """
@@ -36,6 +43,8 @@ ONLINE = "online"
 OFFLINE = "offline"
 ON = "ON"
 OFF = "OFF"
+CLOCK_POSITIONS = ("top_left", "top_right", "bottom_left", "bottom_right", "center")
+CLOCK_KEYS = ("enabled", "format", "position", "size")
 
 
 @dataclass(frozen=True, slots=True)
