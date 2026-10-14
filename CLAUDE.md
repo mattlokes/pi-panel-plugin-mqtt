@@ -28,4 +28,6 @@ uv run pytest     # fake ctl over real Varlink + a recording publisher: no broke
 
 ## Gotchas
 
+- **Home Assistant does not move an existing entity to another device** when a discovery update changes its `device`. It creates the new device but leaves the entity where it was first registered. To move entities, publish an empty retained config for each, then republish (restarting the plugin does it). The entity ids come back the same, because `object_id` is the unique id.
+
 - In TOML a bare key after a `[section]` header belongs to that section. Keep top-level keys above the first header. `tests/test_config.py` checks the shipped example.
