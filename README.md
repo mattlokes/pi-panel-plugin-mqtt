@@ -76,18 +76,25 @@ every broker reconnect.
 
 ## Home Assistant
 
-With `[homeassistant] enabled = true`, the panel shows up as one device:
+With `[homeassistant] enabled = true`, the panel shows up as a device,
+*Pi Panel (jazz)*, with:
 
 - a **Showing** select, and a *Showing because* sensor. Choosing an app switches to it at once, over an app's own hold such as music playing (`command/switch`); timed holds, such as a doorbell's, still win
 - **Next** / **Previous** buttons, a **Rotation paused** switch and a **Rotation** select
 - **Display** (power) and **Compositor** (connectivity) binary sensors
-- for every app and plugin: an **enabled** switch and a **Restart** button
-- for every app action: a button, e.g. *immich: Next photo*
 - a **Clock overlay** switch, with *format* (text), *position* (select) and
   *size* (number) under the device's configuration entities
 
+Every app and plugin is a device of its own, connected via the panel
+(`via_device`), e.g. *Pi Panel (jazz) - Immich*, with:
+
+- an **Enabled** switch and a **Restart** button
+- a button for each of the app's actions, e.g. *Next photo*
+
 The entity set follows the panel's contents. When an app or action goes away,
-its entities are removed by publishing an empty retained config.
+its entities are removed by publishing an empty retained config, and Home
+Assistant drops a package's device with its last entity. Entity ids don't
+depend on the device, so moving entities between devices keeps them.
 
 There is deliberately no control that stops the compositor.
 

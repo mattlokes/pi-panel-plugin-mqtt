@@ -1,4 +1,10 @@
-"""Home Assistant MQTT discovery: the panel as one device with entities.
+"""Home Assistant MQTT discovery: the panel as a device, with one connected
+device per app and plugin.
+
+The panel device holds what concerns the whole panel (what is showing, the
+rotation, the clock overlay). Each package gets a device of its own, linked
+with `via_device`, holding its enable switch, restart button and actions, so
+the panel's page doesn't grow with every package.
 
 The entity set depends on the panel's contents (one restart button and one
 enable switch per app, one button per app action), so `messages()` builds the
@@ -47,6 +53,20 @@ class Discovery:
             "model": "pi-panel",
         }
 
+    def _package_device(self, app: dict[str, Any]) -> dict[str, Any]:
+        """"Pi Panel (jazz) - Music", connected via the panel."""
+        name = app["name"]
+        device = {
+            "identifiers": [f"{self.node_id}_{_slug(name)}"],
+            "name": f"Pi Panel ({self.topics.device_id}) - {name[:1].upper()}{name[1:]}",
+            "manufacturer": "pi-panel",
+            "model": f"pi-panel {app['kind']}",
+            "via_device": self.node_id,
+        }
+        if app.get("version"):
+            device["sw_version"] = app["version"]
+        return device
+
     def _availability(self, compositor: bool = False) -> list[dict[str, str]]:
         """Available only while the bridge and ctl are up: otherwise the state
         topics hold stale values and the entities must not lie. Display
@@ -57,13 +77,16 @@ class Discovery:
         return [{"topic": t} for t in topics]
 
     def _entity(self, component: str, object_id: str, name: str, *,
-                compositor: bool = False, **cfg: Any) -> DiscoveryMessage:
+                compositor: bool = False, device: dict[str, Any] | None = None,
+                **cfg: Any) -> DiscoveryMessage:
+        # The unique id (and so the entity id) doesn't depend on the device:
+        # entities keep their ids when they move between devices.
         uid = f"{self.node_id}_{_slug(object_id)}"
         payload = {
             "name": name,
             "unique_id": uid,
             "object_id": uid,
-            "device": self._device,
+            "device": device or self._device,
             "availability": self._availability(compositor),
             "availability_mode": "all",
             **cfg,
@@ -111,19 +134,21 @@ class Discovery:
             out += self._clock_entities()
         for app in sorted(apps, key=lambda a: a["name"]):
             name = app["name"]
+            # Home Assistant puts the device name in front of these.
+            device = self._package_device(app)
             match = f"{{% for a in value_json if a.name == '{name}' %}}"
             out.append(self._entity(
-                "switch", f"{name}_enabled", f"{name} enabled",
+                "switch", f"{name}_enabled", "Enabled", device=device,
                 command_topic=t.command("app", name, "enabled"), state_topic=t.apps,
                 value_template=f"{match}{{{{ '{ON}' if a.enabled else '{OFF}' }}}}{{% endfor %}}",
                 payload_on=ON, payload_off=OFF, icon="mdi:power-plug"))
             out.append(self._entity(
-                "button", f"{name}_restart", f"Restart {name}",
+                "button", f"{name}_restart", "Restart", device=device,
                 command_topic=t.command("app", name, "restart"), icon="mdi:restart"))
             for action in actions.get(name, []):
                 out.append(self._entity(
-                    "button", f"{name}_action_{action['name']}", f"{name}: {action['label']}",
-                    compositor=True,
+                    "button", f"{name}_action_{action['name']}", action["label"],
+                    compositor=True, device=device,
                     command_topic=t.command("app", name, "action", action["name"]),
                     icon="mdi:gesture-tap-button"))
         return out

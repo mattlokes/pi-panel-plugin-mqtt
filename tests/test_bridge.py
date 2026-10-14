@@ -200,10 +200,21 @@ async def test_snapshot_publishes_retained_state_and_discovery(rig):
     select = discovery_config(client, "/showing/config")
     assert select["options"] == ["clock", "photos"]           # apps only, not the plugin
     assert select["command_topic"] == "pi-panel/jazz/command/switch"
+    assert select["device"]["identifiers"] == ["pi_panel_jazz"]
+    assert "via_device" not in select["device"]
+    # Each package is a device of its own, connected via the panel.
     button = discovery_config(client, "/photos_action_next/config")
-    assert button["name"] == "photos: Next photo"
+    assert button["name"] == "Next photo"           # HA puts the device name in front
     assert button["command_topic"] == "pi-panel/jazz/command/app/photos/action/next"
-    assert discovery_config(client, "/mqtt_restart/config") is not None
+    assert button["unique_id"] == "pi_panel_jazz_photos_action_next"     # unchanged by the move
+    assert button["device"] == {
+        "identifiers": ["pi_panel_jazz_photos"], "name": "Pi Panel (jazz) - Photos",
+        "manufacturer": "pi-panel", "model": "pi-panel app", "via_device": "pi_panel_jazz",
+        "sw_version": "1"}
+    restart = discovery_config(client, "/mqtt_restart/config")
+    assert restart["name"] == "Restart"
+    assert (restart["device"]["name"], restart["device"]["model"]) == (
+        "Pi Panel (jazz) - Mqtt", "pi-panel plugin")
 
 
 async def test_only_changes_are_republished(rig):
