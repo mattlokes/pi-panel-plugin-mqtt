@@ -13,7 +13,8 @@ State topics are retained, and published only when they change:
 Command topics are never retained (a retained command re-fires at every
 broker reconnect):
 
-    command/show                  app name, or JSON {"app", "seconds"?, "priority"?}
+    command/show                  app name, or JSON {"app", "seconds"?, "priority"?}: a hold
+    command/switch                app name: show it now, as a person picks (the select)
     command/release               hold token
     command/next, command/previous
     command/rotation/paused       ON / OFF

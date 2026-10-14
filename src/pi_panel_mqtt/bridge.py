@@ -183,6 +183,8 @@ class Bridge:
             else:
                 params = {"app": text}
             return await self._ctl_call("Show", params)
+        if path == "switch":
+            return await self._ctl_call("SwitchTo", {"app": text})
         if path == "release":
             return await self._ctl_call("Release", {"token": text})
         if path == "next":

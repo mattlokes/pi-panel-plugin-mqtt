@@ -26,6 +26,7 @@ method Show(app: string, seconds: ?float, priority: ?int) -> (token: string)
 method Release(token: string) -> ()
 method Next() -> ()
 method Previous() -> ()
+method SwitchTo(app: string) -> ()
 method PauseRotation() -> ()
 method ResumeRotation() -> ()
 method SelectRotation(name: string) -> ()
@@ -61,8 +62,8 @@ class FakeCtl:
 
     async def start(self) -> None:
         iface = Interface(CTL_DESCRIPTION)
-        for name in ("Show", "Release", "Next", "Previous", "PauseRotation", "ResumeRotation",
-                     "SelectRotation", "EnablePackage", "RestartPackage", "SetClock"):
+        for name in ("Show", "Release", "Next", "Previous", "SwitchTo", "PauseRotation",
+                     "ResumeRotation", "SelectRotation", "EnablePackage", "RestartPackage", "SetClock"):
             iface.add_method(name, self._recorder(name))
         iface.add_method("GetState", self._get_state)
         iface.add_method("ListApps", self._list_apps)
@@ -198,7 +199,7 @@ async def test_snapshot_publishes_retained_state_and_discovery(rig):
 
     select = discovery_config(client, "/showing/config")
     assert select["options"] == ["clock", "photos"]           # apps only, not the plugin
-    assert select["command_topic"] == "pi-panel/jazz/command/show"
+    assert select["command_topic"] == "pi-panel/jazz/command/switch"
     button = discovery_config(client, "/photos_action_next/config")
     assert button["name"] == "photos: Next photo"
     assert button["command_topic"] == "pi-panel/jazz/command/app/photos/action/next"
@@ -239,6 +240,7 @@ async def test_ctl_going_away_marks_it_offline(rig):
     ("show", "clock", ("Show", {"app": "clock"})),
     ("show", '{"app": "clock", "seconds": 30, "priority": 5}',
      ("Show", {"app": "clock", "seconds": 30, "priority": 5})),
+    ("switch", "clock", ("SwitchTo", {"app": "clock"})),
     ("release", "tok1", ("Release", {"token": "tok1"})),
     ("next", "", ("Next", {})),
     ("previous", "", ("Previous", {})),

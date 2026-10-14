@@ -38,7 +38,8 @@ The base is `pi-panel/<device>`; the device id defaults to the hostname.
 | `apps` | yes | JSON: installed apps and plugins, enabled, unit state |
 | `rotations` | yes | JSON: `{"selected": …, "rotations": [names]}` |
 | `app/<name>/actions` | yes | JSON: the app's actions (`io.pipanel.App.ListActions`) |
-| `command/show` | no | app name, or `{"app", "seconds"?, "priority"?}` |
+| `command/show` | no | app name, or `{"app", "seconds"?, "priority"?}`: a hold, for automations |
+| `command/switch` | no | app name: show it now, as a person picks it (drops holds without an expiry, as *Next* does) |
 | `command/release` | no | hold token |
 | `command/next`, `command/previous` | no | anything |
 | `command/rotation/paused` | no | `ON`/`OFF` |
@@ -77,7 +78,7 @@ every broker reconnect.
 
 With `[homeassistant] enabled = true`, the panel shows up as one device:
 
-- a **Showing** select (choosing an app pins it until *Next*), and a *Showing because* sensor
+- a **Showing** select, and a *Showing because* sensor. Choosing an app switches to it at once, over an app's own hold such as music playing (`command/switch`); timed holds, such as a doorbell's, still win
 - **Next** / **Previous** buttons, a **Rotation paused** switch and a **Rotation** select
 - **Display** (power) and **Compositor** (connectivity) binary sensors
 - for every app and plugin: an **enabled** switch and a **Restart** button

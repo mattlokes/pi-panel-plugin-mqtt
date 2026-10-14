@@ -81,7 +81,7 @@ class Discovery:
             # HA reads a select's options from this config, not from a state
             # topic, and rejects an empty list.
             self._entity("select", "showing", "Showing", compositor=True,
-                         command_topic=t.command("show"), state_topic=t.state,
+                         command_topic=t.command("switch"), state_topic=t.state,
                          value_template="{{ value_json.showing or '' }}",
                          options=app_names or ["(none)"], icon="mdi:monitor-dashboard"),
             self._entity("sensor", "reason", "Showing because", state_topic=t.state,
